@@ -1,0 +1,9 @@
+{
+  "app_name": "AutoDropVideo",
+  "version": "1.0.0",
+  "default_privacy": "public",
+  "auto_add_shorts_hashtag": true,
+  "shorts_max_duration": 60,
+  "retry_attempts": 3,
+  "retry_delay_seconds": 60
+}
