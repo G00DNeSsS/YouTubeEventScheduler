@@ -100,14 +100,20 @@ class UploadQueueWidget(QWidget):
         retry_btn = QPushButton("Повторить")
         retry_btn.clicked.connect(self._retry_post)
 
-        delete_btn = QPushButton("Удалить из очереди")
+        delete_btn = QPushButton("Удалить")
         delete_btn.setStyleSheet("color: #ef5350; border-color: #2c2c2c;")
         delete_btn.clicked.connect(self._delete_post)
+
+        clear_btn = QPushButton("Очистить всё")
+        clear_btn.setStyleSheet("color: #ef5350; border-color: #2c2c2c;")
+        clear_btn.setToolTip("Удалить все записи из очереди")
+        clear_btn.clicked.connect(self._clear_all)
 
         btn_row.addWidget(upload_now_btn)
         btn_row.addWidget(retry_btn)
         btn_row.addStretch()
         btn_row.addWidget(delete_btn)
+        btn_row.addWidget(clear_btn)
         layout.addLayout(btn_row)
 
     def refresh(self):
@@ -247,6 +253,24 @@ class UploadQueueWidget(QWidget):
             if item and item.data(Qt.ItemDataRole.UserRole) == post_id:
                 return row
         return -1
+
+    def _clear_all(self):
+        posts = db.get_scheduled_posts()
+        if not posts:
+            QMessageBox.information(self, "Очередь пуста", "В очереди нет записей.")
+            return
+        uploading = [p for p in posts if p["status"] == "uploading"]
+        extra = f"\n\nВнимание: {len(uploading)} видео сейчас загружается." if uploading else ""
+        reply = QMessageBox.question(
+            self, "Очистить очередь",
+            f"Удалить все {len(posts)} записей из очереди?{extra}",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if reply == QMessageBox.StandardButton.Yes:
+            for post in posts:
+                task_scheduler.cancel_post(post["id"])
+                db.delete_scheduled_post(post["id"])
+            self.refresh()
 
     def _delete_post(self):
         post_id = self._selected_post_id()
