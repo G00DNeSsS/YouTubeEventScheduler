@@ -60,25 +60,36 @@ class MainWindow(QMainWindow):
         self._switch_page(0)
 
     def _build_sidebar(self) -> QWidget:
+        from PyQt6.QtWidgets import QFrame
         sidebar = QWidget()
-        sidebar.setFixedWidth(180)
+        sidebar.setFixedWidth(200)
         sidebar.setObjectName("Sidebar")
         sidebar.setStyleSheet("""
-            #Sidebar { background-color: #1a1a2e; }
-            QPushButton {
+            #Sidebar {
+                background-color: #0e0e0e;
+                border-right: 1px solid #1c1c1c;
+            }
+            #Sidebar QPushButton {
                 background: transparent;
-                color: #a0a0b0;
+                color: #505050;
                 border: none;
+                border-left: 3px solid transparent;
+                border-radius: 0;
                 text-align: left;
                 padding: 12px 20px;
-                font-size: 14px;
-                border-radius: 0;
+                font-size: 13px;
+                font-weight: 500;
+                letter-spacing: 0.2px;
             }
-            QPushButton:hover { background-color: #16213e; color: white; }
-            QPushButton[active="true"] {
-                background-color: #0f3460;
-                color: white;
-                border-left: 3px solid #e94560;
+            #Sidebar QPushButton:hover {
+                background-color: #181818;
+                color: #b0b0b0;
+                border-left: 3px solid transparent;
+            }
+            #Sidebar QPushButton[active="true"] {
+                background-color: #1a1a1a;
+                color: #ef5350;
+                border-left: 3px solid #e53935;
             }
         """)
 
@@ -86,10 +97,47 @@ class MainWindow(QMainWindow):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
 
-        title = QLabel("AutoDrop\nVideo")
-        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        title.setStyleSheet("color: white; font-size: 16px; font-weight: bold; padding: 20px 10px;")
-        layout.addWidget(title)
+        # Logo area
+        logo_widget = QWidget()
+        logo_widget.setStyleSheet("background: transparent;")
+        logo_layout = QVBoxLayout(logo_widget)
+        logo_layout.setContentsMargins(0, 28, 0, 22)
+        logo_layout.setSpacing(3)
+
+        icon_lbl = QLabel("▶")
+        icon_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        icon_lbl.setStyleSheet("color: #e53935; font-size: 22px; background: transparent;")
+        logo_layout.addWidget(icon_lbl)
+
+        name_lbl = QLabel("AutoDrop")
+        name_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        name_lbl.setStyleSheet(
+            "color: #f0f0f0; font-size: 15px; font-weight: 700; "
+            "letter-spacing: 1px; background: transparent;"
+        )
+        logo_layout.addWidget(name_lbl)
+
+        sub_lbl = QLabel("VIDEO")
+        sub_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        sub_lbl.setStyleSheet(
+            "color: #383838; font-size: 9px; letter-spacing: 4px; background: transparent;"
+        )
+        logo_layout.addWidget(sub_lbl)
+        layout.addWidget(logo_widget)
+
+        divider = QFrame()
+        divider.setFrameShape(QFrame.Shape.HLine)
+        divider.setStyleSheet("background: #1c1c1c; border: none; max-height: 1px; margin: 0;")
+        layout.addWidget(divider)
+        layout.addSpacing(10)
+
+        # Nav section label
+        nav_label = QLabel("НАВИГАЦИЯ")
+        nav_label.setStyleSheet(
+            "color: #2e2e2e; font-size: 9px; font-weight: 700; "
+            "letter-spacing: 2px; padding: 0 20px 6px 20px; background: transparent;"
+        )
+        layout.addWidget(nav_label)
 
         self._nav_buttons = []
         nav_items = [
@@ -106,6 +154,14 @@ class MainWindow(QMainWindow):
             layout.addWidget(btn)
 
         layout.addStretch()
+
+        ver_lbl = QLabel("v 1.0.0")
+        ver_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        ver_lbl.setStyleSheet(
+            "color: #252525; font-size: 10px; padding: 12px; background: transparent;"
+        )
+        layout.addWidget(ver_lbl)
+
         return sidebar
 
     def _switch_page(self, index: int):

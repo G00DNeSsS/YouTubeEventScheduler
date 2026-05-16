@@ -55,7 +55,9 @@ class UploadQueueWidget(QWidget):
         layout.setContentsMargins(20, 20, 20, 20)
 
         header = QHBoxLayout()
-        header.addWidget(QLabel("<h2>Очередь загрузок</h2>"))
+        title_lbl = QLabel("Очередь загрузок")
+        title_lbl.setStyleSheet("font-size: 18px; font-weight: 700; color: #f0f0f0;")
+        header.addWidget(title_lbl)
         header.addStretch()
         refresh_btn = QPushButton("Обновить")
         refresh_btn.clicked.connect(self.refresh)
@@ -76,14 +78,18 @@ class UploadQueueWidget(QWidget):
 
         btn_row = QHBoxLayout()
         upload_now_btn = QPushButton("Загрузить сейчас")
-        upload_now_btn.setStyleSheet("background: #1a73e8; color: white; padding: 6px 14px;")
+        upload_now_btn.setStyleSheet(
+            "background: #e53935; color: white; border: none; "
+            "padding: 7px 18px; border-radius: 7px; font-weight: 600;"
+        )
+        upload_now_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         upload_now_btn.clicked.connect(self._upload_now)
 
         retry_btn = QPushButton("Повторить")
         retry_btn.clicked.connect(self._retry_post)
 
         delete_btn = QPushButton("Удалить из очереди")
-        delete_btn.setStyleSheet("color: #c62828;")
+        delete_btn.setStyleSheet("color: #ef5350; border-color: #2c2c2c;")
         delete_btn.clicked.connect(self._delete_post)
 
         btn_row.addWidget(upload_now_btn)

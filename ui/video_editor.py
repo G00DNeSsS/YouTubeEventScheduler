@@ -172,7 +172,7 @@ class VideoEditorDialog(QDialog):
         thumb_row = QHBoxLayout()
         self.thumb_preview = QLabel()
         self.thumb_preview.setFixedSize(160, 90)
-        self.thumb_preview.setStyleSheet("background: #222; border: 1px solid #444;")
+        self.thumb_preview.setStyleSheet("background: #1a1a1a; border: 1px solid #2c2c2c; border-radius: 6px; color: #505050;")
         self.thumb_preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.thumb_preview.setText("Нет превью")
         thumb_row.addWidget(self.thumb_preview)
@@ -346,31 +346,36 @@ class VideoLibraryWidget(QWidget):
         layout.setContentsMargins(20, 20, 20, 20)
 
         header = QHBoxLayout()
-        header.addWidget(QLabel("<h2>Библиотека видео</h2>"))
+        title_lbl = QLabel("Библиотека видео")
+        title_lbl.setStyleSheet("font-size: 18px; font-weight: 700; color: #f0f0f0;")
+        header.addWidget(title_lbl)
         header.addStretch()
         add_btn = QPushButton("+ Добавить видео")
-        add_btn.setStyleSheet("padding: 8px 16px; font-size: 13px;")
+        add_btn.setStyleSheet(
+            "background: #e53935; color: white; border: none; "
+            "padding: 8px 18px; font-size: 13px; border-radius: 7px; font-weight: 600;"
+        )
+        add_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         add_btn.clicked.connect(self._add_video)
         header.addWidget(add_btn)
         layout.addLayout(header)
 
         self.list_widget = QListWidget()
-        self.list_widget.setSpacing(4)
-        self.list_widget.setStyleSheet("""
-            QListWidget { border: 1px solid #ddd; border-radius: 4px; }
-            QListWidget::item { padding: 10px; border-bottom: 1px solid #eee; }
-            QListWidget::item:selected { background: #e8f0fe; color: black; }
-        """)
+        self.list_widget.setSpacing(2)
         layout.addWidget(self.list_widget)
 
         btn_row = QHBoxLayout()
         edit_btn = QPushButton("Редактировать")
         edit_btn.clicked.connect(self._edit_video)
         schedule_btn = QPushButton("Запланировать")
-        schedule_btn.setStyleSheet("background: #1a73e8; color: white; padding: 6px 14px;")
+        schedule_btn.setStyleSheet(
+            "background: #e53935; color: white; border: none; "
+            "padding: 7px 16px; border-radius: 7px; font-weight: 600;"
+        )
+        schedule_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         schedule_btn.clicked.connect(self._schedule_video)
         delete_btn = QPushButton("Удалить")
-        delete_btn.setStyleSheet("color: #c62828;")
+        delete_btn.setStyleSheet("color: #ef5350; border-color: #2c2c2c;")
         delete_btn.clicked.connect(self._delete_video)
         btn_row.addWidget(edit_btn)
         btn_row.addWidget(schedule_btn)

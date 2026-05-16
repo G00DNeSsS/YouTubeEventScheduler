@@ -20,7 +20,9 @@ class AccountManagerWidget(QWidget):
         layout.setContentsMargins(20, 20, 20, 20)
         layout.setSpacing(16)
 
-        layout.addWidget(QLabel("<h2>YouTube аккаунты</h2>"))
+        title_lbl = QLabel("YouTube аккаунты")
+        title_lbl.setStyleSheet("font-size: 18px; font-weight: 700; color: #f0f0f0;")
+        layout.addWidget(title_lbl)
 
         info = QLabel(
             "Для подключения аккаунта необходим файл <b>client_secrets.json</b> "
@@ -28,26 +30,26 @@ class AccountManagerWidget(QWidget):
             "Положите файл в папку <code>config/</code> рядом с программой."
         )
         info.setWordWrap(True)
-        info.setStyleSheet("color: #555; padding: 8px; background: #f5f5f5; border-radius: 4px;")
+        info.setStyleSheet(
+            "color: #707070; padding: 10px 14px; background: #1a1a1a; "
+            "border: 1px solid #202020; border-radius: 8px; line-height: 1.5;"
+        )
         layout.addWidget(info)
 
         self.accounts_list = QListWidget()
-        self.accounts_list.setStyleSheet("""
-            QListWidget { border: 1px solid #ddd; border-radius: 4px; }
-            QListWidget::item { padding: 12px; border-bottom: 1px solid #eee; }
-            QListWidget::item:selected { background: #e8f0fe; color: black; }
-        """)
         layout.addWidget(self.accounts_list)
 
         btn_row = QHBoxLayout()
         add_btn = QPushButton("+ Подключить аккаунт")
         add_btn.setStyleSheet(
-            "background: #1a73e8; color: white; padding: 8px 16px; font-size: 13px;"
+            "background: #e53935; color: white; border: none; "
+            "padding: 8px 18px; font-size: 13px; border-radius: 7px; font-weight: 600;"
         )
+        add_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         add_btn.clicked.connect(self._connect_account)
 
         delete_btn = QPushButton("Удалить аккаунт")
-        delete_btn.setStyleSheet("color: #c62828; padding: 8px 12px;")
+        delete_btn.setStyleSheet("color: #ef5350; border-color: #2c2c2c; padding: 8px 12px;")
         delete_btn.clicked.connect(self._delete_account)
 
         btn_row.addWidget(add_btn)

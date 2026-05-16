@@ -72,21 +72,17 @@ class CalendarWidget(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(20, 20, 20, 20)
 
-        layout.addWidget(QLabel("<h2>Календарь публикаций</h2>"))
+        title_lbl = QLabel("Календарь публикаций")
+        title_lbl.setStyleSheet("font-size: 18px; font-weight: 700; color: #f0f0f0;")
+        layout.addWidget(title_lbl)
 
         content = QHBoxLayout()
 
         left = QVBoxLayout()
         self.calendar = QCalendarWidget()
-        self.calendar.setGridVisible(True)
+        self.calendar.setGridVisible(False)
         self.calendar.setMinimumWidth(380)
         self.calendar.clicked.connect(self._on_date_clicked)
-        self.calendar.setStyleSheet("""
-            QCalendarWidget QAbstractItemView {
-                selection-background-color: #1a73e8;
-                selection-color: white;
-            }
-        """)
         left.addWidget(self.calendar)
 
         legend = QHBoxLayout()
@@ -102,20 +98,18 @@ class CalendarWidget(QWidget):
         content.addLayout(left)
 
         right = QVBoxLayout()
-        right.addWidget(QLabel("<b>События на выбранный день:</b>"))
+        day_lbl = QLabel("События на выбранный день")
+        day_lbl.setStyleSheet("font-size: 12px; font-weight: 600; color: #505050; letter-spacing: 0.3px;")
+        right.addWidget(day_lbl)
         self.posts_list = QListWidget()
         self.posts_list.setMinimumWidth(340)
-        self.posts_list.setStyleSheet("""
-            QListWidget::item { padding: 8px; border-bottom: 1px solid #eee; }
-            QListWidget::item:selected { background: #e8f0fe; color: black; }
-        """)
         right.addWidget(self.posts_list)
 
         post_btns = QHBoxLayout()
         reschedule_btn = QPushButton("Перенести")
         reschedule_btn.clicked.connect(self._reschedule_post)
         delete_btn = QPushButton("Удалить")
-        delete_btn.setStyleSheet("color: #c62828;")
+        delete_btn.setStyleSheet("color: #ef5350; border-color: #2c2c2c;")
         delete_btn.clicked.connect(self._delete_post)
         post_btns.addWidget(reschedule_btn)
         post_btns.addStretch()
@@ -138,7 +132,8 @@ class CalendarWidget(QWidget):
             try:
                 qdate = QDate.fromString(d_str, "yyyy-MM-dd")
                 fmt = QTextCharFormat()
-                fmt.setBackground(QBrush(QColor("#e8f0fe")))
+                fmt.setBackground(QBrush(QColor("#2a1515")))
+                fmt.setForeground(QBrush(QColor("#ef5350")))
                 fmt.setFontWeight(700)
                 self.calendar.setDateTextFormat(qdate, fmt)
             except Exception:
