@@ -109,10 +109,25 @@ class SchedulePickerDialog(QDialog):
         hdr.addWidget(self._count_lbl)
         ll.addLayout(hdr)
 
+        search_row = QHBoxLayout()
+        search_row.setSpacing(6)
         self._search = QLineEdit()
         self._search.setPlaceholderText("Поиск по названию...")
         self._search.textChanged.connect(self._filter)
-        ll.addWidget(self._search)
+        search_row.addWidget(self._search, 1)
+
+        self._picker_sort = QComboBox()
+        self._picker_sort.addItems([
+            "Дата (новые)", "Дата (старые)",
+            "A → Z", "Z → A",
+            "Shorts", "Видео",
+        ])
+        self._picker_sort.setFixedWidth(120)
+        self._picker_sort.currentIndexChanged.connect(
+            lambda: self._filter(self._search.text())
+        )
+        search_row.addWidget(self._picker_sort)
+        ll.addLayout(search_row)
 
         self._list = QListWidget()
         self._list.setSpacing(1)
@@ -221,9 +236,24 @@ class SchedulePickerDialog(QDialog):
         for acc in db.get_accounts():
             self.account_combo.addItem(acc["account_name"], acc["id"])
 
+    def _sort_videos(self, videos: list) -> list:
+        videos = list(videos)
+        idx = self._picker_sort.currentIndex()
+        if idx == 1:    # старые
+            videos.reverse()
+        elif idx == 2:  # A→Z
+            videos.sort(key=lambda v: v["title"].lower())
+        elif idx == 3:  # Z→A
+            videos.sort(key=lambda v: v["title"].lower(), reverse=True)
+        elif idx == 4:  # Shorts сначала
+            videos.sort(key=lambda v: (v["video_type"] != "short", v["title"].lower()))
+        elif idx == 5:  # Видео сначала
+            videos.sort(key=lambda v: (v["video_type"] == "short", v["title"].lower()))
+        return videos
+
     def _load_videos(self):
         self._all_videos = list(db.get_videos())
-        self._render(self._all_videos)
+        self._render(self._sort_videos(self._all_videos))
 
     def _render(self, videos: list):
         self._list.blockSignals(True)
@@ -248,9 +278,9 @@ class SchedulePickerDialog(QDialog):
         txt = text.lower()
         filtered = (
             [v for v in self._all_videos if txt in v["title"].lower()]
-            if txt else self._all_videos
+            if txt else list(self._all_videos)
         )
-        self._render(filtered)
+        self._render(self._sort_videos(filtered))
 
     def _on_check(self):
         self._preselected = self._checked_ids()
@@ -732,6 +762,101 @@ class BatchAddDialog(QDialog):
 
 
 # ---------------------------------------------------------------------------
+# BulkEditDialog — apply common title / description / tags to many videos
+# ---------------------------------------------------------------------------
+
+class BulkEditDialog(QDialog):
+    def __init__(self, video_ids: list, parent=None):
+        super().__init__(parent)
+        self._video_ids = video_ids
+        n = len(video_ids)
+        self.setWindowTitle(f"Массовое редактирование — {n} видео")
+        self.setMinimumWidth(480)
+        self._build_ui(n)
+
+    def _build_ui(self, n: int):
+        layout = QVBoxLayout(self)
+        layout.setSpacing(12)
+
+        info = QLabel(f"Применить к {n} выбранным видео.\nПустое поле = оставить без изменений.")
+        info.setWordWrap(True)
+        info.setStyleSheet(
+            "color: #606060; padding: 10px 14px; background: #1a1a1a; "
+            "border-radius: 8px; line-height: 1.5;"
+        )
+        layout.addWidget(info)
+
+        # Title
+        title_hdr = QHBoxLayout()
+        title_hdr.addWidget(QLabel("Заголовок:"))
+        title_hdr.addStretch()
+        hint_lbl = QLabel("Используй {n} для нумерации")
+        hint_lbl.setStyleSheet("color: #383838; font-size: 11px;")
+        title_hdr.addWidget(hint_lbl)
+        layout.addLayout(title_hdr)
+
+        self.title_edit = QLineEdit()
+        self.title_edit.setPlaceholderText('Например: "Влог {n}" → Влог 1, Влог 2, Влог 3…')
+        self.title_edit.setMaxLength(100)
+        layout.addWidget(self.title_edit)
+
+        layout.addWidget(QLabel("Описание:"))
+        self.desc_edit = QTextEdit()
+        self.desc_edit.setMaximumHeight(90)
+        self.desc_edit.setPlaceholderText("Общее описание для всех...")
+        layout.addWidget(self.desc_edit)
+
+        layout.addWidget(QLabel("Теги (через запятую):"))
+        self.tags_edit = QLineEdit()
+        self.tags_edit.setPlaceholderText("тег1, тег2, тег3")
+        layout.addWidget(self.tags_edit)
+
+        priv_row = QHBoxLayout()
+        priv_row.addWidget(QLabel("Приватность:"))
+        self.privacy_combo = QComboBox()
+        self.privacy_combo.addItems(["Не менять", "Публичное", "Не в списке", "Приватное"])
+        priv_row.addWidget(self.privacy_combo)
+        priv_row.addStretch()
+        layout.addLayout(priv_row)
+
+        btn_row = QHBoxLayout()
+        cancel_btn = QPushButton("Отмена")
+        cancel_btn.clicked.connect(self.reject)
+        apply_btn = QPushButton(f"Применить к {n} видео")
+        apply_btn.setStyleSheet(
+            "background: #e53935; color: white; border: none; "
+            "padding: 8px 20px; border-radius: 7px; font-weight: 600;"
+        )
+        apply_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        apply_btn.clicked.connect(self._apply)
+        btn_row.addStretch()
+        btn_row.addWidget(cancel_btn)
+        btn_row.addWidget(apply_btn)
+        layout.addLayout(btn_row)
+
+    def _apply(self):
+        title_tpl = self.title_edit.text()
+        desc = self.desc_edit.toPlainText()
+        tags = self.tags_edit.text().strip()
+        priv_idx = self.privacy_combo.currentIndex()
+        priv_map = {1: "public", 2: "unlisted", 3: "private"}
+
+        for i, vid_id in enumerate(self._video_ids):
+            video = db.get_video(vid_id)
+            if not video:
+                continue
+            new_title = title_tpl.replace("{n}", str(i + 1)).strip() if title_tpl.strip() else video["title"]
+            new_desc = desc if desc.strip() else video["description"]
+            new_tags = tags if tags else video["tags"]
+            new_priv = priv_map.get(priv_idx, video["privacy"])
+            db.update_video(
+                vid_id, new_title, new_desc, new_tags,
+                video["thumbnail_path"], new_priv, video["video_type"]
+            )
+        self.accept()
+
+
+# ---------------------------------------------------------------------------
 # VideoLibraryWidget
 # ---------------------------------------------------------------------------
 
@@ -805,7 +930,7 @@ class VideoLibraryWidget(QWidget):
         # Action buttons
         btn_row = QHBoxLayout()
         edit_btn = QPushButton("Редактировать")
-        edit_btn.setToolTip("Редактировать одно выбранное видео")
+        edit_btn.setToolTip("1 видео — редактор · 2+ видео — массовое редактирование")
         edit_btn.clicked.connect(self._edit_video)
 
         schedule_btn = QPushButton("Запланировать...")
@@ -891,12 +1016,16 @@ class VideoLibraryWidget(QWidget):
 
     def _edit_video(self):
         items = self.list_widget.selectedItems()
-        if len(items) != 1:
-            QMessageBox.information(self, "Выбор",
-                                    "Выберите ровно одно видео для редактирования.")
+        if not items:
+            QMessageBox.information(self, "Выбор", "Выберите видео из списка.")
             return
-        vid = items[0].data(Qt.ItemDataRole.UserRole)
-        dlg = VideoEditorDialog(video_id=vid, parent=self)
+        if len(items) == 1:
+            dlg = VideoEditorDialog(
+                video_id=items[0].data(Qt.ItemDataRole.UserRole), parent=self
+            )
+        else:
+            ids = [it.data(Qt.ItemDataRole.UserRole) for it in items]
+            dlg = BulkEditDialog(video_ids=ids, parent=self)
         if dlg.exec() == QDialog.DialogCode.Accepted:
             self.refresh()
 
