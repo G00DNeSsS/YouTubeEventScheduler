@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.date import DateTrigger
 import db.database as db
@@ -51,10 +51,15 @@ def cancel_post(post_id: int):
 def load_pending_posts():
     posts = db.get_scheduled_posts(status="pending")
     now = datetime.utcnow()
+    missed_delay = now + timedelta(seconds=10)
     for post in posts:
         run_at = datetime.fromisoformat(post["scheduled_at"])
         if run_at > now:
             schedule_post(post["id"], run_at)
+        else:
+            # Пропущенные посты — запустить через 10 сек после старта
+            schedule_post(post["id"], missed_delay)
+            missed_delay += timedelta(seconds=30)
 
 
 def start():
