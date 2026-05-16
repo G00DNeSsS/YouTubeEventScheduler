@@ -1,28 +1,30 @@
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QTableWidget,
     QTableWidgetItem, QPushButton, QProgressBar, QHeaderView,
-    QMessageBox, QAbstractItemView
+    QMessageBox, QAbstractItemView, QMenu, QApplication,
 )
-from PyQt6.QtCore import Qt, QThread, pyqtSignal
-from PyQt6.QtGui import QColor
+from PyQt6.QtCore import Qt, QThread, pyqtSignal, QUrl
+from PyQt6.QtGui import QColor, QAction, QDesktopServices
 
 import db.database as db
 import scheduler.task_scheduler as task_scheduler
 from api.youtube_uploader import upload_video
 
 STATUS_COLORS = {
-    "pending": "#1a73e8",
+    "pending":   "#4f8ef7",
     "uploading": "#f9a825",
-    "done": "#2e7d32",
-    "failed": "#c62828",
+    "done":      "#4caf50",
+    "failed":    "#ef5350",
 }
 
 STATUS_LABELS = {
-    "pending": "Ожидает",
+    "pending":   "Ожидает",
     "uploading": "Загружается...",
-    "done": "Опубликовано",
-    "failed": "Ошибка",
+    "done":      "Опубликовано",
+    "failed":    "Ошибка",
 }
+
+URL_COL = 4
 
 
 class UploadThread(QThread):
@@ -74,7 +76,17 @@ class UploadQueueWidget(QWidget):
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.table.verticalHeader().setVisible(False)
+
+        # Clickable URL column
+        self.table.cellClicked.connect(self._on_cell_clicked)
+        self.table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.table.customContextMenuRequested.connect(self._show_context_menu)
+
         layout.addWidget(self.table)
+
+        hint = QLabel("Клик по ссылке — открыть в браузере  ·  ПКМ — скопировать")
+        hint.setStyleSheet("color: #2e2e2e; font-size: 11px;")
+        layout.addWidget(hint)
 
         btn_row = QHBoxLayout()
         upload_now_btn = QPushButton("Загрузить сейчас")
@@ -106,7 +118,6 @@ class UploadQueueWidget(QWidget):
             status = post["status"]
             color = STATUS_COLORS.get(status, "#666")
             label = STATUS_LABELS.get(status, status)
-
             dt_str = post["scheduled_at"][:16].replace("T", " ")
 
             self.table.setItem(row, 0, QTableWidgetItem(post["title"]))
@@ -117,20 +128,22 @@ class UploadQueueWidget(QWidget):
             status_item.setForeground(QColor(color))
             self.table.setItem(row, 3, status_item)
 
+            # URL cell — styled as link when present
             url = post["post_url"] or ""
-            self.table.setItem(row, 4, QTableWidgetItem(url))
+            url_item = QTableWidgetItem(url)
+            if url:
+                url_item.setForeground(QColor("#4fc3f7"))
+                url_item.setToolTip("Нажмите чтобы открыть · ПКМ для копирования")
+            self.table.setItem(row, URL_COL, url_item)
 
             # Progress bar
+            bar = QProgressBar()
+            bar.setRange(0, 100)
             if status == "uploading" and post["id"] in self._threads:
-                bar = QProgressBar()
-                bar.setRange(0, 100)
-                self.table.setCellWidget(row, 5, bar)
+                bar.setValue(0)
             else:
-                pct = 100 if status == "done" else 0
-                bar = QProgressBar()
-                bar.setRange(0, 100)
-                bar.setValue(pct)
-                self.table.setCellWidget(row, 5, bar)
+                bar.setValue(100 if status == "done" else 0)
+            self.table.setCellWidget(row, 5, bar)
 
             for col in range(5):
                 item = self.table.item(row, col)
@@ -138,6 +151,43 @@ class UploadQueueWidget(QWidget):
                     item.setData(Qt.ItemDataRole.UserRole, post["id"])
 
         self.table.resizeRowsToContents()
+
+    # ── URL interaction ───────────────────────────────────────────────────────
+
+    def _on_cell_clicked(self, row: int, col: int):
+        if col != URL_COL:
+            return
+        item = self.table.item(row, URL_COL)
+        if item and item.text():
+            QDesktopServices.openUrl(QUrl(item.text()))
+
+    def _show_context_menu(self, pos):
+        row = self.table.rowAt(pos.y())
+        if row < 0:
+            return
+        url_item = self.table.item(row, URL_COL)
+        url = url_item.text() if url_item else ""
+        if not url:
+            return
+
+        menu = QMenu(self)
+        menu.setStyleSheet(
+            "QMenu { background: #1e1e1e; border: 1px solid #2c2c2c; }"
+            "QMenu::item { padding: 6px 20px; color: #d0d0d0; }"
+            "QMenu::item:selected { background: #2a2a2a; }"
+        )
+
+        open_act = QAction("Открыть в браузере", self)
+        open_act.triggered.connect(lambda: QDesktopServices.openUrl(QUrl(url)))
+        menu.addAction(open_act)
+
+        copy_act = QAction("Копировать ссылку", self)
+        copy_act.triggered.connect(lambda: QApplication.clipboard().setText(url))
+        menu.addAction(copy_act)
+
+        menu.exec(self.table.viewport().mapToGlobal(pos))
+
+    # ── post actions ─────────────────────────────────────────────────────────
 
     def _selected_post_id(self):
         row = self.table.currentRow()
@@ -168,7 +218,6 @@ class UploadQueueWidget(QWidget):
     def _start_upload(self, post_id: int):
         thread = UploadThread(post_id)
         self._threads[post_id] = thread
-
         row = self._find_row(post_id)
 
         def on_progress(pct):

@@ -171,11 +171,16 @@ class SchedulePickerDialog(QDialog):
         irow = QHBoxLayout()
         irow.addWidget(QLabel("Интервал:"))
         self.interval_spin = QSpinBox()
-        self.interval_spin.setRange(1, 168)
-        self.interval_spin.setValue(24)
-        self.interval_spin.setSuffix(" ч")
-        self.interval_spin.setFixedWidth(110)
+        self.interval_spin.setRange(1, 1440)
+        self.interval_spin.setValue(60)
+        self.interval_spin.setFixedWidth(80)
         irow.addWidget(self.interval_spin)
+        self.interval_unit = QComboBox()
+        self.interval_unit.addItems(["мин", "ч", "дней"])
+        self.interval_unit.setCurrentIndex(0)
+        self.interval_unit.setFixedWidth(70)
+        self.interval_unit.currentIndexChanged.connect(self._on_unit_changed)
+        irow.addWidget(self.interval_unit)
         irow.addStretch()
         rl.addLayout(irow)
 
@@ -201,6 +206,7 @@ class SchedulePickerDialog(QDialog):
 
         self.dt_edit.dateTimeChanged.connect(self._update_preview)
         self.interval_spin.valueChanged.connect(self._update_preview)
+        self.interval_unit.currentIndexChanged.connect(self._update_preview)
 
         # ── Button bar ───────────────────────────────────────────────────────
         sep = QFrame()
@@ -230,7 +236,18 @@ class SchedulePickerDialog(QDialog):
         bl.addWidget(self.ok_btn)
         root.addWidget(bar)
 
-    # ── data helpers ─────────────────────────────────────────────────────────
+    # ── helpers ──────────────────────────────────────────────────────────────
+
+    def _on_unit_changed(self, idx: int):
+        ranges = {0: (1, 1440, 60), 1: (1, 168, 24), 2: (1, 30, 1)}
+        lo, hi, default = ranges[idx]
+        self.interval_spin.setRange(lo, hi)
+        self.interval_spin.setValue(default)
+
+    def _interval_minutes(self) -> int:
+        val = self.interval_spin.value()
+        unit = self.interval_unit.currentIndex()
+        return val if unit == 0 else val * 60 if unit == 1 else val * 60 * 24
 
     def _load_accounts(self):
         for acc in db.get_accounts():
@@ -325,11 +342,11 @@ class SchedulePickerDialog(QDialog):
             self.preview_lbl.setText("Выберите видео и дату")
             return
         dt = self.dt_edit.dateTime().toPyDateTime()
-        interval_h = self.interval_spin.value()
+        interval_mins = self._interval_minutes()
         title_map = {v["id"]: v["title"] for v in self._all_videos}
         lines = []
         for i, vid_id in enumerate(ordered[:6]):
-            t = dt + timedelta(hours=interval_h * i)
+            t = dt + timedelta(minutes=interval_mins * i)
             title = title_map.get(vid_id, "?")
             short_t = (title[:30] + "…") if len(title) > 30 else title
             lines.append(f"{t.strftime('%d.%m  %H:%M')}  —  {short_t}")
@@ -355,9 +372,9 @@ class SchedulePickerDialog(QDialog):
     def get_result(self) -> list:
         account_id = self.account_combo.currentData()
         dt = self.dt_edit.dateTime().toPyDateTime()
-        interval_h = self.interval_spin.value()
+        interval_mins = self._interval_minutes()
         return [
-            (vid_id, account_id, dt + timedelta(hours=interval_h * i))
+            (vid_id, account_id, dt + timedelta(minutes=interval_mins * i))
             for i, vid_id in enumerate(self._ordered_checked())
         ]
 
