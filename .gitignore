@@ -7,6 +7,7 @@ __pycache__/
 dist/
 build/
 *.spec
+!AutoDropVideo.spec
 
 # Данные и токены — не коммитить
 data/autodrop.db
