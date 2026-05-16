@@ -1,4 +1,5 @@
 import os
+import re
 import json
 import tempfile
 from datetime import datetime, timedelta
@@ -66,9 +67,11 @@ def _is_short(width: int, height: int, duration: float) -> bool:
     return bool(width and height and height > width and duration <= 60)
 
 
-def _title_sort_key(title: str) -> str:
-    # Python sorts ё (U+0451) after я (U+044F); replace it so ё falls next to е
-    return title.lower().replace("ё", "е\x01")
+def _title_sort_key(title: str) -> list:
+    # Natural sort: numbers compared as integers so "Часть 10" > "Часть 9"
+    # Also fixes ё (U+0451 > я) — replace so ё falls next to е
+    parts = re.split(r"(\d+)", title.lower().replace("ё", "е\x01"))
+    return [int(p) if p.isdigit() else p for p in parts]
 
 
 # ---------------------------------------------------------------------------
