@@ -190,16 +190,17 @@ class SchedulePickerDialog(QDialog):
         )
         rl.addWidget(sep_lbl)
 
-        self.preview_lbl = QLabel("Выберите видео и дату")
-        self.preview_lbl.setStyleSheet(
-            "color: #505050; font-size: 12px; padding: 10px 14px; "
-            "background: #1a1a1a; border-radius: 8px;"
+        self.preview_list = QListWidget()
+        self.preview_list.setMinimumHeight(130)
+        self.preview_list.setStyleSheet(
+            "QListWidget { background: #1a1a1a; border-radius: 8px; "
+            "border: 1px solid #252525; font-size: 12px; padding: 4px; }"
+            "QListWidget::item { padding: 3px 10px; color: #606060; }"
         )
-        self.preview_lbl.setWordWrap(True)
-        self.preview_lbl.setMinimumHeight(130)
-        self.preview_lbl.setAlignment(Qt.AlignmentFlag.AlignTop)
-        rl.addWidget(self.preview_lbl)
-        rl.addStretch()
+        placeholder = QListWidgetItem("Выберите видео и дату")
+        placeholder.setForeground(QColor("#404040"))
+        self.preview_list.addItem(placeholder)
+        rl.addWidget(self.preview_list, 1)
 
         content.addWidget(right, 1)
         root.addLayout(content, 1)
@@ -337,22 +338,21 @@ class SchedulePickerDialog(QDialog):
         self._update_preview()
 
     def _update_preview(self):
+        self.preview_list.clear()
         ordered = self._ordered_checked()
         if not ordered:
-            self.preview_lbl.setText("Выберите видео и дату")
+            placeholder = QListWidgetItem("Выберите видео и дату")
+            placeholder.setForeground(QColor("#404040"))
+            self.preview_list.addItem(placeholder)
             return
         dt = self.dt_edit.dateTime().toPyDateTime()
         interval_mins = self._interval_minutes()
         title_map = {v["id"]: v["title"] for v in self._all_videos}
-        lines = []
-        for i, vid_id in enumerate(ordered[:6]):
+        for i, vid_id in enumerate(ordered):
             t = dt + timedelta(minutes=interval_mins * i)
             title = title_map.get(vid_id, "?")
-            short_t = (title[:30] + "…") if len(title) > 30 else title
-            lines.append(f"{t.strftime('%d.%m  %H:%M')}  —  {short_t}")
-        if len(ordered) > 6:
-            lines.append(f"... ещё {len(ordered) - 6}")
-        self.preview_lbl.setText("\n".join(lines))
+            item = QListWidgetItem(f"{t.strftime('%d.%m.%Y  %H:%M')}  —  {title}")
+            self.preview_list.addItem(item)
 
     def _ordered_checked(self) -> list:
         result = []
@@ -377,6 +377,76 @@ class SchedulePickerDialog(QDialog):
             (vid_id, account_id, dt + timedelta(minutes=interval_mins * i))
             for i, vid_id in enumerate(self._ordered_checked())
         ]
+
+
+# ---------------------------------------------------------------------------
+# ScheduleConfirmDialog — review and confirm planned schedule before upload
+# ---------------------------------------------------------------------------
+
+class ScheduleConfirmDialog(QDialog):
+    def __init__(self, schedule: list, title_map: dict, parent=None):
+        super().__init__(parent)
+        self._schedule = schedule
+        self._title_map = title_map
+        self.setWindowTitle("Подтверждение расписания")
+        self.setMinimumSize(520, 420)
+        self._build_ui()
+
+    def _build_ui(self):
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(20, 16, 20, 14)
+        layout.setSpacing(12)
+
+        n = len(self._schedule)
+        header = QLabel(f"Готово к выкладке: {n} видео")
+        header.setStyleSheet("font-size: 15px; font-weight: 700; color: #d0d0d0;")
+        layout.addWidget(header)
+
+        sub = QLabel("Проверьте расписание перед запуском. Видео выложатся точно по времени.")
+        sub.setWordWrap(True)
+        sub.setStyleSheet("color: #505050; font-size: 12px;")
+        layout.addWidget(sub)
+
+        self._list = QListWidget()
+        self._list.setStyleSheet(
+            "QListWidget { background: #1a1a1a; border-radius: 8px; "
+            "border: 1px solid #252525; font-size: 12px; padding: 4px; }"
+            "QListWidget::item { padding: 5px 10px; color: #909090; }"
+            "QListWidget::item:alternate { background: #181818; }"
+        )
+        self._list.setAlternatingRowColors(True)
+        for i, (vid_id, _acc, dt) in enumerate(self._schedule, 1):
+            title = self._title_map.get(vid_id, "?")
+            self._list.addItem(f"{i}.  {dt.strftime('%d.%m.%Y  %H:%M')}  —  {title}")
+        layout.addWidget(self._list)
+
+        sep = QFrame()
+        sep.setFrameShape(QFrame.Shape.HLine)
+        sep.setStyleSheet("background: #1e1e1e; border: none; max-height: 1px;")
+        layout.addWidget(sep)
+
+        btn_row = QHBoxLayout()
+
+        delete_btn = QPushButton("Удалить расписание")
+        delete_btn.setStyleSheet(
+            "color: #ef5350; border: 1px solid #2c2c2c; "
+            "padding: 8px 18px; border-radius: 7px;"
+        )
+        delete_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        delete_btn.clicked.connect(self.reject)
+
+        start_btn = QPushButton(f"Начать выкладку  ({len(self._schedule)} видео)")
+        start_btn.setStyleSheet(
+            "background: #e53935; color: white; border: none; "
+            "padding: 8px 22px; border-radius: 7px; font-weight: 600;"
+        )
+        start_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        start_btn.clicked.connect(self.accept)
+
+        btn_row.addWidget(delete_btn)
+        btn_row.addStretch()
+        btn_row.addWidget(start_btn)
+        layout.addLayout(btn_row)
 
 
 # ---------------------------------------------------------------------------
@@ -1052,20 +1122,27 @@ class VideoLibraryWidget(QWidget):
             for item in self.list_widget.selectedItems()
         ]
         dlg = SchedulePickerDialog(preselected_ids=preselected, parent=self)
-        if dlg.exec() == QDialog.DialogCode.Accepted:
-            schedule = dlg.get_result()
-            for vid_id, account_id, dt in schedule:
-                post_id = db.add_scheduled_post(vid_id, account_id, dt.isoformat())
-                task_scheduler.schedule_post(post_id, dt)
-            self.post_scheduled.emit()
-            n = len(schedule)
-            first_dt = schedule[0][2]
-            msg = (
-                f"Запланировано {n} видео.\nПервое: {first_dt.strftime('%d.%m.%Y %H:%M')}"
-                if n > 1 else
-                f"Публикация запланирована на {first_dt.strftime('%d.%m.%Y %H:%M')}"
-            )
-            QMessageBox.information(self, "Запланировано", msg)
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+
+        schedule = dlg.get_result()
+        title_map = {v["id"]: v["title"] for v in db.get_videos()}
+        confirm = ScheduleConfirmDialog(schedule, title_map, parent=self)
+        if confirm.exec() != QDialog.DialogCode.Accepted:
+            return
+
+        for vid_id, account_id, dt in schedule:
+            post_id = db.add_scheduled_post(vid_id, account_id, dt.isoformat())
+            task_scheduler.schedule_post(post_id, dt)
+        self.post_scheduled.emit()
+        n = len(schedule)
+        first_dt = schedule[0][2]
+        msg = (
+            f"Запланировано {n} видео.\nПервое: {first_dt.strftime('%d.%m.%Y %H:%M')}"
+            if n > 1 else
+            f"Публикация запланирована на {first_dt.strftime('%d.%m.%Y %H:%M')}"
+        )
+        QMessageBox.information(self, "Запланировано", msg)
 
     def _delete_video(self):
         vids = self._selected_ids()
