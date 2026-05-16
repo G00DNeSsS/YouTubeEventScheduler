@@ -2,8 +2,8 @@ from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
     QPushButton, QStackedWidget, QLabel, QSystemTrayIcon, QMenu
 )
-from PyQt6.QtCore import Qt, pyqtSignal, QObject
-from PyQt6.QtGui import QIcon, QAction
+from PyQt6.QtCore import Qt, pyqtSignal, QObject, QPoint
+from PyQt6.QtGui import QIcon, QAction, QPixmap, QPainter, QBrush, QColor, QPolygon
 
 from ui.video_editor import VideoLibraryWidget
 from ui.calendar_widget import CalendarWidget
@@ -175,8 +175,23 @@ class MainWindow(QMainWindow):
         elif index == 2:
             self.queue_widget.refresh()
 
+    def _make_tray_icon(self) -> QIcon:
+        pix = QPixmap(32, 32)
+        pix.fill(Qt.GlobalColor.transparent)
+        p = QPainter(pix)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        p.setBrush(QBrush(QColor("#e53935")))
+        p.setPen(Qt.PenStyle.NoPen)
+        p.drawEllipse(1, 1, 30, 30)
+        p.setBrush(QBrush(Qt.GlobalColor.white))
+        triangle = QPolygon([QPoint(11, 8), QPoint(11, 24), QPoint(25, 16)])
+        p.drawPolygon(triangle)
+        p.end()
+        return QIcon(pix)
+
     def _setup_tray(self):
         self.tray = QSystemTrayIcon(self)
+        self.tray.setIcon(self._make_tray_icon())
         self.tray.setToolTip("AutoDropVideo")
         tray_menu = QMenu()
         show_action = QAction("Открыть", self)

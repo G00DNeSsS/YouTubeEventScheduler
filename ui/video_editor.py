@@ -1,5 +1,6 @@
 import os
 import json
+import tempfile
 from datetime import datetime, timedelta
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel,
@@ -43,6 +44,9 @@ def get_video_info(file_path: str) -> dict:
     return {"width": 0, "height": 0, "duration": 0}
 
 
+_TEMP_FRAME = os.path.join(tempfile.gettempdir(), "_adv_preview_frame.jpg")
+
+
 def extract_frame(video_path: str, time_sec: float, out_path: str) -> bool:
     try:
         import subprocess
@@ -52,6 +56,8 @@ def extract_frame(video_path: str, time_sec: float, out_path: str) -> bool:
             capture_output=True, timeout=15
         )
         return os.path.exists(out_path)
+    except FileNotFoundError:
+        return False  # ffmpeg not in PATH
     except Exception:
         return False
 
@@ -506,7 +512,7 @@ class VideoEditorDialog(QDialog):
     def _preview_frame(self, time_sec: float):
         if not self._video_path or not os.path.exists(self._video_path):
             return
-        tmp = "/tmp/_adv_preview_frame.jpg"
+        tmp = _TEMP_FRAME
         if extract_frame(self._video_path, time_sec, tmp):
             self._temp_thumb = tmp
             pix = QPixmap(tmp).scaled(
