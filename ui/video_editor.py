@@ -7,6 +7,7 @@ from PyQt6.QtWidgets import (
     QFrame, QSlider, QDialog, QDialogButtonBox, QDateTimeEdit,
     QMessageBox, QSizePolicy, QListWidget, QListWidgetItem, QSpinBox,
     QTableWidget, QTableWidgetItem, QHeaderView, QAbstractItemView,
+    QInputDialog,
 )
 from PyQt6.QtCore import Qt, pyqtSignal, QDateTime
 from PyQt6.QtGui import QPixmap, QColor
@@ -32,10 +33,11 @@ def get_video_info(file_path: str) -> dict:
         data = _json.loads(result.stdout)
         for stream in data.get("streams", []):
             if stream.get("codec_type") == "video":
-                w = stream.get("width", 0)
-                h = stream.get("height", 0)
-                dur = float(stream.get("duration", 0))
-                return {"width": w, "height": h, "duration": dur}
+                return {
+                    "width": stream.get("width", 0),
+                    "height": stream.get("height", 0),
+                    "duration": float(stream.get("duration", 0)),
+                }
     except Exception:
         pass
     return {"width": 0, "height": 0, "duration": 0}
@@ -59,86 +61,253 @@ def _is_short(width: int, height: int, duration: float) -> bool:
 
 
 # ---------------------------------------------------------------------------
-# ScheduleDialog — handles single and batch scheduling
+# SchedulePickerDialog — video selector + scheduling config in one place
 # ---------------------------------------------------------------------------
 
-class ScheduleDialog(QDialog):
-    def __init__(self, video_ids: list, parent=None):
+class SchedulePickerDialog(QDialog):
+    def __init__(self, preselected_ids: list = None, parent=None):
         super().__init__(parent)
-        self._video_ids = video_ids
-        n = len(video_ids)
-        self.setWindowTitle(f"Запланировать {n} видео" if n > 1 else "Запланировать публикацию")
-        self.setMinimumWidth(430)
-        self._build_ui(n)
+        self._preselected = set(preselected_ids or [])
+        self._all_videos = []
+        self.setWindowTitle("Запланировать публикацию")
+        self.setMinimumSize(900, 560)
+        self._build_ui()
+        self._load_videos()
 
-    def _build_ui(self, n: int):
-        layout = QVBoxLayout(self)
-        layout.setSpacing(10)
+    def _build_ui(self):
+        root = QVBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
 
-        layout.addWidget(QLabel("Аккаунт:"))
+        # ── Content row ──────────────────────────────────────────────────────
+        content = QHBoxLayout()
+        content.setContentsMargins(0, 0, 0, 0)
+        content.setSpacing(0)
+
+        # Left panel — video picker
+        left = QWidget()
+        left.setObjectName("PickerLeft")
+        left.setStyleSheet("#PickerLeft { background: #1a1a1a; border-right: 1px solid #202020; }")
+        left.setFixedWidth(400)
+        ll = QVBoxLayout(left)
+        ll.setContentsMargins(16, 16, 16, 14)
+        ll.setSpacing(10)
+
+        hdr = QHBoxLayout()
+        lbl = QLabel("Видео")
+        lbl.setStyleSheet("font-size: 14px; font-weight: 600; color: #d0d0d0;")
+        hdr.addWidget(lbl)
+        hdr.addStretch()
+        self._count_lbl = QLabel("Выбрано: 0")
+        self._count_lbl.setStyleSheet("color: #444; font-size: 11px;")
+        hdr.addWidget(self._count_lbl)
+        ll.addLayout(hdr)
+
+        self._search = QLineEdit()
+        self._search.setPlaceholderText("Поиск по названию...")
+        self._search.textChanged.connect(self._filter)
+        ll.addWidget(self._search)
+
+        self._list = QListWidget()
+        self._list.setSpacing(1)
+        self._list.itemChanged.connect(self._on_check)
+        ll.addWidget(self._list)
+
+        tog = QHBoxLayout()
+        all_btn = QPushButton("Выбрать все")
+        all_btn.clicked.connect(self._check_all)
+        none_btn = QPushButton("Снять все")
+        none_btn.clicked.connect(self._uncheck_all)
+        tog.addWidget(all_btn)
+        tog.addWidget(none_btn)
+        tog.addStretch()
+        ll.addLayout(tog)
+
+        content.addWidget(left)
+
+        # Right panel — settings
+        right = QWidget()
+        rl = QVBoxLayout(right)
+        rl.setContentsMargins(22, 16, 22, 14)
+        rl.setSpacing(12)
+
+        rtitle = QLabel("Настройки публикации")
+        rtitle.setStyleSheet("font-size: 14px; font-weight: 600; color: #d0d0d0;")
+        rl.addWidget(rtitle)
+
+        rl.addWidget(QLabel("Аккаунт:"))
         self.account_combo = QComboBox()
         self._load_accounts()
-        layout.addWidget(self.account_combo)
+        rl.addWidget(self.account_combo)
 
-        layout.addWidget(QLabel("Дата и время первой публикации:"))
+        rl.addWidget(QLabel("Дата первой публикации:"))
         self.dt_edit = QDateTimeEdit(QDateTime.currentDateTime())
         self.dt_edit.setDisplayFormat("dd.MM.yyyy HH:mm")
         self.dt_edit.setCalendarPopup(True)
         self.dt_edit.setMinimumDateTime(QDateTime.currentDateTime())
-        layout.addWidget(self.dt_edit)
+        rl.addWidget(self.dt_edit)
 
-        self.interval_spin = None
-        self.preview_label = None
+        irow = QHBoxLayout()
+        irow.addWidget(QLabel("Интервал:"))
+        self.interval_spin = QSpinBox()
+        self.interval_spin.setRange(1, 168)
+        self.interval_spin.setValue(24)
+        self.interval_spin.setSuffix(" ч")
+        self.interval_spin.setFixedWidth(110)
+        irow.addWidget(self.interval_spin)
+        irow.addStretch()
+        rl.addLayout(irow)
 
-        if n > 1:
-            interval_row = QHBoxLayout()
-            interval_row.addWidget(QLabel("Интервал между публикациями:"))
-            self.interval_spin = QSpinBox()
-            self.interval_spin.setRange(1, 168)
-            self.interval_spin.setValue(24)
-            self.interval_spin.setSuffix(" ч")
-            self.interval_spin.setFixedWidth(100)
-            interval_row.addWidget(self.interval_spin)
-            interval_row.addStretch()
-            layout.addLayout(interval_row)
-
-            self.preview_label = QLabel()
-            self.preview_label.setStyleSheet(
-                "color: #606060; font-size: 12px; padding: 10px 12px; "
-                "background: #1a1a1a; border-radius: 7px; line-height: 1.6;"
-            )
-            self.preview_label.setWordWrap(True)
-            layout.addWidget(self.preview_label)
-
-            self.dt_edit.dateTimeChanged.connect(self._update_preview)
-            self.interval_spin.valueChanged.connect(self._update_preview)
-            self._update_preview()
-
-        buttons = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        sep_lbl = QLabel("РАСПИСАНИЕ")
+        sep_lbl.setStyleSheet(
+            "color: #2e2e2e; font-size: 10px; font-weight: 700; letter-spacing: 2px;"
         )
-        buttons.accepted.connect(self._accept)
-        buttons.rejected.connect(self.reject)
-        layout.addWidget(buttons)
+        rl.addWidget(sep_lbl)
+
+        self.preview_lbl = QLabel("Выберите видео и дату")
+        self.preview_lbl.setStyleSheet(
+            "color: #505050; font-size: 12px; padding: 10px 14px; "
+            "background: #1a1a1a; border-radius: 8px;"
+        )
+        self.preview_lbl.setWordWrap(True)
+        self.preview_lbl.setMinimumHeight(130)
+        self.preview_lbl.setAlignment(Qt.AlignmentFlag.AlignTop)
+        rl.addWidget(self.preview_lbl)
+        rl.addStretch()
+
+        content.addWidget(right, 1)
+        root.addLayout(content, 1)
+
+        self.dt_edit.dateTimeChanged.connect(self._update_preview)
+        self.interval_spin.valueChanged.connect(self._update_preview)
+
+        # ── Button bar ───────────────────────────────────────────────────────
+        sep = QFrame()
+        sep.setFrameShape(QFrame.Shape.HLine)
+        sep.setStyleSheet("background: #1e1e1e; border: none; max-height: 1px;")
+        root.addWidget(sep)
+
+        bar = QWidget()
+        bar.setStyleSheet("background: #141414;")
+        bl = QHBoxLayout(bar)
+        bl.setContentsMargins(20, 10, 20, 14)
+
+        cancel_btn = QPushButton("Отмена")
+        cancel_btn.clicked.connect(self.reject)
+
+        self.ok_btn = QPushButton("Запланировать")
+        self.ok_btn.setStyleSheet(
+            "background: #e53935; color: white; border: none; "
+            "padding: 8px 22px; border-radius: 7px; font-weight: 600;"
+        )
+        self.ok_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.ok_btn.setEnabled(False)
+        self.ok_btn.clicked.connect(self._accept)
+
+        bl.addStretch()
+        bl.addWidget(cancel_btn)
+        bl.addWidget(self.ok_btn)
+        root.addWidget(bar)
+
+    # ── data helpers ─────────────────────────────────────────────────────────
 
     def _load_accounts(self):
-        self.account_combo.clear()
-        self._accounts = db.get_accounts()
-        for acc in self._accounts:
+        for acc in db.get_accounts():
             self.account_combo.addItem(acc["account_name"], acc["id"])
 
+    def _load_videos(self):
+        self._all_videos = list(db.get_videos())
+        self._render(self._all_videos)
+
+    def _render(self, videos: list):
+        self._list.blockSignals(True)
+        self._list.clear()
+        for v in videos:
+            badge = "Shorts" if v["video_type"] == "short" else "Видео"
+            item = QListWidgetItem(f"[{badge}]  {v['title']}")
+            item.setData(Qt.ItemDataRole.UserRole, v["id"])
+            item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+            checked = v["id"] in self._preselected
+            item.setCheckState(
+                Qt.CheckState.Checked if checked else Qt.CheckState.Unchecked
+            )
+            if v["video_type"] == "short":
+                item.setForeground(QColor("#ef5350"))
+            self._list.addItem(item)
+        self._list.blockSignals(False)
+        self._refresh_state()
+
+    def _filter(self, text: str):
+        self._preselected = self._checked_ids()
+        txt = text.lower()
+        filtered = (
+            [v for v in self._all_videos if txt in v["title"].lower()]
+            if txt else self._all_videos
+        )
+        self._render(filtered)
+
+    def _on_check(self):
+        self._preselected = self._checked_ids()
+        self._refresh_state()
+
+    def _checked_ids(self) -> set:
+        ids = set()
+        for i in range(self._list.count()):
+            item = self._list.item(i)
+            if item.checkState() == Qt.CheckState.Checked:
+                ids.add(item.data(Qt.ItemDataRole.UserRole))
+        return ids
+
+    def _check_all(self):
+        self._list.blockSignals(True)
+        for i in range(self._list.count()):
+            self._list.item(i).setCheckState(Qt.CheckState.Checked)
+        self._list.blockSignals(False)
+        self._preselected = self._checked_ids()
+        self._refresh_state()
+
+    def _uncheck_all(self):
+        self._list.blockSignals(True)
+        for i in range(self._list.count()):
+            self._list.item(i).setCheckState(Qt.CheckState.Unchecked)
+        self._list.blockSignals(False)
+        self._preselected = set()
+        self._refresh_state()
+
+    def _refresh_state(self):
+        n = len(self._preselected)
+        self._count_lbl.setText(f"Выбрано: {n}")
+        has_acc = self.account_combo.count() > 0
+        self.ok_btn.setEnabled(n > 0 and has_acc)
+        word = "видео" if n % 10 != 1 or n % 100 == 11 else "видео"
+        self.ok_btn.setText(f"Запланировать {n} {word}")
+        self._update_preview()
+
     def _update_preview(self):
-        if not self.preview_label:
+        ordered = self._ordered_checked()
+        if not ordered:
+            self.preview_lbl.setText("Выберите видео и дату")
             return
         dt = self.dt_edit.dateTime().toPyDateTime()
         interval_h = self.interval_spin.value()
+        title_map = {v["id"]: v["title"] for v in self._all_videos}
         lines = []
-        for i, _ in enumerate(self._video_ids[:5]):
+        for i, vid_id in enumerate(ordered[:6]):
             t = dt + timedelta(hours=interval_h * i)
-            lines.append(f"Видео {i + 1}:  {t.strftime('%d.%m.%Y  %H:%M')}")
-        if len(self._video_ids) > 5:
-            lines.append(f"... ещё {len(self._video_ids) - 5} видео")
-        self.preview_label.setText("\n".join(lines))
+            title = title_map.get(vid_id, "?")
+            short_t = (title[:30] + "…") if len(title) > 30 else title
+            lines.append(f"{t.strftime('%d.%m  %H:%M')}  —  {short_t}")
+        if len(ordered) > 6:
+            lines.append(f"... ещё {len(ordered) - 6}")
+        self.preview_lbl.setText("\n".join(lines))
+
+    def _ordered_checked(self) -> list:
+        result = []
+        for i in range(self._list.count()):
+            item = self._list.item(i)
+            if item.checkState() == Qt.CheckState.Checked:
+                result.append(item.data(Qt.ItemDataRole.UserRole))
+        return result
 
     def _accept(self):
         if self.account_combo.count() == 0:
@@ -150,10 +319,10 @@ class ScheduleDialog(QDialog):
     def get_result(self) -> list:
         account_id = self.account_combo.currentData()
         dt = self.dt_edit.dateTime().toPyDateTime()
-        interval_h = self.interval_spin.value() if self.interval_spin else 0
+        interval_h = self.interval_spin.value()
         return [
             (vid_id, account_id, dt + timedelta(hours=interval_h * i))
-            for i, vid_id in enumerate(self._video_ids)
+            for i, vid_id in enumerate(self._ordered_checked())
         ]
 
 
@@ -171,7 +340,7 @@ class VideoEditorDialog(QDialog):
         self._temp_thumb = None
 
         self.setWindowTitle("Редактор видео" if video_id else "Добавить видео")
-        self.setMinimumSize(600, 650)
+        self.setMinimumSize(600, 620)
         self._build_ui()
 
         if video_id:
@@ -281,7 +450,6 @@ class VideoEditorDialog(QDialog):
         layout.addLayout(thumb_row)
         layout.addStretch()
 
-        # Buttons live outside the scroll area so they're always visible
         btn_sep = QFrame()
         btn_sep.setFrameShape(QFrame.Shape.HLine)
         btn_sep.setStyleSheet("background: #1e1e1e; border: none; max-height: 1px;")
@@ -291,7 +459,6 @@ class VideoEditorDialog(QDialog):
         btn_wrapper.setStyleSheet("background: #141414;")
         btn_layout = QHBoxLayout(btn_wrapper)
         btn_layout.setContentsMargins(20, 10, 20, 14)
-
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel
         )
@@ -303,12 +470,7 @@ class VideoEditorDialog(QDialog):
     def _on_title_changed(self, text: str):
         n = len(text)
         self.title_counter.setText(f"{n} / 100")
-        if n >= 90:
-            color = "#ef5350"
-        elif n >= 70:
-            color = "#f59e0b"
-        else:
-            color = "#383838"
+        color = "#ef5350" if n >= 90 else "#f59e0b" if n >= 70 else "#383838"
         self.title_counter.setStyleSheet(f"color: {color}; font-size: 11px;")
 
     def _apply_file(self, path: str):
@@ -319,13 +481,10 @@ class VideoEditorDialog(QDialog):
         info = get_video_info(path)
         self._video_duration = info["duration"]
         short = _is_short(info["width"], info["height"], self._video_duration)
-        if short:
-            self.type_label.setText("Shorts")
-            self.type_label.setStyleSheet("color: #ef5350; font-weight: bold;")
-        else:
-            self.type_label.setText("Обычное видео")
-            self.type_label.setStyleSheet("font-weight: bold;")
-
+        self.type_label.setText("Shorts" if short else "Обычное видео")
+        self.type_label.setStyleSheet(
+            "color: #ef5350; font-weight: bold;" if short else "font-weight: bold;"
+        )
         self.title_edit.setText(os.path.splitext(os.path.basename(path))[0])
 
         if self._video_duration > 0:
@@ -345,6 +504,8 @@ class VideoEditorDialog(QDialog):
             self._preview_frame((value / 100) * self._video_duration)
 
     def _preview_frame(self, time_sec: float):
+        if not self._video_path or not os.path.exists(self._video_path):
+            return
         tmp = "/tmp/_adv_preview_frame.jpg"
         if extract_frame(self._video_path, time_sec, tmp):
             self._temp_thumb = tmp
@@ -353,6 +514,8 @@ class VideoEditorDialog(QDialog):
                 Qt.TransformationMode.SmoothTransformation
             )
             self.thumb_preview.setPixmap(pix)
+        else:
+            self.thumb_preview.setText("ffmpeg не найден")
 
     def _use_current_frame(self):
         if self._temp_thumb and os.path.exists(self._temp_thumb):
@@ -387,12 +550,11 @@ class VideoEditorDialog(QDialog):
         self.tags_edit.setText(video["tags"])
         privacy_map = {"public": 0, "unlisted": 1, "private": 2}
         self.privacy_combo.setCurrentIndex(privacy_map.get(video["privacy"], 0))
-        if video["video_type"] == "short":
-            self.type_label.setText("Shorts")
-            self.type_label.setStyleSheet("color: #ef5350; font-weight: bold;")
-        else:
-            self.type_label.setText("Обычное видео")
-            self.type_label.setStyleSheet("font-weight: bold;")
+        short = video["video_type"] == "short"
+        self.type_label.setText("Shorts" if short else "Обычное видео")
+        self.type_label.setStyleSheet(
+            "color: #ef5350; font-weight: bold;" if short else "font-weight: bold;"
+        )
         if video["thumbnail_path"] and os.path.exists(video["thumbnail_path"]):
             self.thumbnail_path = video["thumbnail_path"]
             pix = QPixmap(video["thumbnail_path"]).scaled(
@@ -400,8 +562,9 @@ class VideoEditorDialog(QDialog):
                 Qt.TransformationMode.SmoothTransformation
             )
             self.thumb_preview.setPixmap(pix)
-        if self._video_duration > 0:
+        if self._video_duration > 0 and os.path.exists(self._video_path or ""):
             self.frame_slider.setEnabled(True)
+            self._preview_frame(0)  # load initial frame preview
 
     def _save(self):
         title = self.title_edit.text().strip()
@@ -453,7 +616,9 @@ class BatchAddDialog(QDialog):
         layout.setSpacing(12)
 
         files_lbl = QLabel(f"Файлы и заголовки  ({len(self._paths)})")
-        files_lbl.setStyleSheet("font-size: 12px; font-weight: 600; color: #505050; letter-spacing: 0.3px;")
+        files_lbl.setStyleSheet(
+            "font-size: 12px; font-weight: 600; color: #505050; letter-spacing: 0.3px;"
+        )
         layout.addWidget(files_lbl)
 
         self.table = QTableWidget(len(self._paths), 3)
@@ -465,8 +630,7 @@ class BatchAddDialog(QDialog):
         self.table.verticalHeader().setVisible(False)
         self.table.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
-        table_h = min(len(self._paths) * 38 + 42, 260)
-        self.table.setFixedHeight(table_h)
+        self.table.setFixedHeight(min(len(self._paths) * 38 + 42, 260))
 
         self._title_edits = []
         for row, path in enumerate(self._paths):
@@ -496,7 +660,9 @@ class BatchAddDialog(QDialog):
         layout.addWidget(self.table)
 
         sep = QLabel("ОБЩИЕ НАСТРОЙКИ")
-        sep.setStyleSheet("color: #303030; font-size: 10px; font-weight: 700; letter-spacing: 2px;")
+        sep.setStyleSheet(
+            "color: #303030; font-size: 10px; font-weight: 700; letter-spacing: 2px;"
+        )
         layout.addWidget(sep)
 
         layout.addWidget(QLabel("Описание:"))
@@ -574,8 +740,9 @@ class VideoLibraryWidget(QWidget):
     def _build_ui(self):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(20, 20, 20, 20)
-        layout.setSpacing(12)
+        layout.setSpacing(10)
 
+        # Header
         header = QHBoxLayout()
         title_lbl = QLabel("Библиотека видео")
         title_lbl.setStyleSheet("font-size: 18px; font-weight: 700; color: #f0f0f0;")
@@ -591,28 +758,56 @@ class VideoLibraryWidget(QWidget):
         header.addWidget(add_btn)
         layout.addLayout(header)
 
-        hint = QLabel("Ctrl+Click / Shift+Click — выбрать несколько")
-        hint.setStyleSheet("color: #303030; font-size: 11px;")
-        layout.addWidget(hint)
+        # Toolbar: search + sort
+        toolbar = QHBoxLayout()
+        toolbar.setSpacing(8)
 
+        self._search_edit = QLineEdit()
+        self._search_edit.setPlaceholderText("Поиск по названию...")
+        self._search_edit.textChanged.connect(self.refresh)
+        toolbar.addWidget(self._search_edit, 1)
+
+        self._sort_combo = QComboBox()
+        self._sort_combo.addItems([
+            "Дата (новые)",
+            "Дата (старые)",
+            "Название A → Z",
+            "Название Z → A",
+            "Shorts сначала",
+            "Видео сначала",
+        ])
+        self._sort_combo.setFixedWidth(160)
+        self._sort_combo.currentIndexChanged.connect(self.refresh)
+        toolbar.addWidget(self._sort_combo)
+
+        layout.addLayout(toolbar)
+
+        # Video list
         self.list_widget = QListWidget()
         self.list_widget.setSpacing(2)
         self.list_widget.setSelectionMode(
             QAbstractItemView.SelectionMode.ExtendedSelection
         )
+        self.list_widget.itemDoubleClicked.connect(self._quick_rename)
         layout.addWidget(self.list_widget)
 
+        # Hint
+        hint = QLabel("Двойной клик — переименовать  ·  Ctrl/Shift+Click — выбрать несколько")
+        hint.setStyleSheet("color: #2e2e2e; font-size: 11px;")
+        layout.addWidget(hint)
+
+        # Action buttons
         btn_row = QHBoxLayout()
         edit_btn = QPushButton("Редактировать")
         edit_btn.setToolTip("Редактировать одно выбранное видео")
         edit_btn.clicked.connect(self._edit_video)
 
-        schedule_btn = QPushButton("Запланировать")
+        schedule_btn = QPushButton("Запланировать...")
         schedule_btn.setStyleSheet(
             "background: #e53935; color: white; border: none; "
             "padding: 7px 16px; border-radius: 7px; font-weight: 600;"
         )
-        schedule_btn.setToolTip("Запланировать выбранные видео")
+        schedule_btn.setToolTip("Открыть диалог выбора видео для планирования")
         schedule_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         schedule_btn.clicked.connect(self._schedule_video)
 
@@ -627,14 +822,45 @@ class VideoLibraryWidget(QWidget):
         layout.addLayout(btn_row)
 
     def refresh(self):
+        videos = list(db.get_videos())
+
+        # Filter
+        search = self._search_edit.text().lower().strip()
+        if search:
+            videos = [v for v in videos if search in v["title"].lower()]
+
+        # Sort
+        idx = self._sort_combo.currentIndex()
+        if idx == 1:    # старые
+            videos = list(reversed(videos))
+        elif idx == 2:  # A→Z
+            videos.sort(key=lambda v: v["title"].lower())
+        elif idx == 3:  # Z→A
+            videos.sort(key=lambda v: v["title"].lower(), reverse=True)
+        elif idx == 4:  # Shorts сначала
+            videos.sort(key=lambda v: (v["video_type"] != "short", v["title"].lower()))
+        elif idx == 5:  # Видео сначала
+            videos.sort(key=lambda v: (v["video_type"] == "short", v["title"].lower()))
+
         self.list_widget.clear()
-        for v in db.get_videos():
+        for v in videos:
             badge = "Shorts" if v["video_type"] == "short" else "Видео"
-            item = QListWidgetItem(f"[{badge}]  {v['title']}   —   {os.path.basename(v['file_path'])}")
+            item = QListWidgetItem(f"[{badge}]  {v['title']}")
             item.setData(Qt.ItemDataRole.UserRole, v["id"])
+            item.setData(Qt.ItemDataRole.UserRole + 1, v["title"])
             if v["video_type"] == "short":
                 item.setForeground(QColor("#ef5350"))
             self.list_widget.addItem(item)
+
+    def _quick_rename(self, item: QListWidgetItem):
+        vid_id = item.data(Qt.ItemDataRole.UserRole)
+        old_title = item.data(Qt.ItemDataRole.UserRole + 1)
+        new_title, ok = QInputDialog.getText(
+            self, "Переименовать", "Заголовок:", text=old_title
+        )
+        if ok and new_title.strip():
+            db.update_video_title(vid_id, new_title.strip())
+            self.refresh()
 
     def _selected_ids(self) -> list:
         items = self.list_widget.selectedItems()
@@ -649,10 +875,11 @@ class VideoLibraryWidget(QWidget):
         )
         if not paths:
             return
-        if len(paths) == 1:
-            dlg = VideoEditorDialog(file_path=paths[0], parent=self)
-        else:
-            dlg = BatchAddDialog(paths, parent=self)
+        dlg = (
+            VideoEditorDialog(file_path=paths[0], parent=self)
+            if len(paths) == 1
+            else BatchAddDialog(paths, parent=self)
+        )
         if dlg.exec() == QDialog.DialogCode.Accepted:
             self.refresh()
 
@@ -668,10 +895,11 @@ class VideoLibraryWidget(QWidget):
             self.refresh()
 
     def _schedule_video(self):
-        vids = self._selected_ids()
-        if not vids:
-            return
-        dlg = ScheduleDialog(video_ids=vids, parent=self)
+        preselected = [
+            item.data(Qt.ItemDataRole.UserRole)
+            for item in self.list_widget.selectedItems()
+        ]
+        dlg = SchedulePickerDialog(preselected_ids=preselected, parent=self)
         if dlg.exec() == QDialog.DialogCode.Accepted:
             schedule = dlg.get_result()
             for vid_id, account_id, dt in schedule:
@@ -680,11 +908,11 @@ class VideoLibraryWidget(QWidget):
             self.post_scheduled.emit()
             n = len(schedule)
             first_dt = schedule[0][2]
-            if n == 1:
-                msg = f"Публикация запланирована на {first_dt.strftime('%d.%m.%Y %H:%M')}"
-            else:
-                msg = (f"Запланировано {n} видео.\n"
-                       f"Первое: {first_dt.strftime('%d.%m.%Y %H:%M')}")
+            msg = (
+                f"Запланировано {n} видео.\nПервое: {first_dt.strftime('%d.%m.%Y %H:%M')}"
+                if n > 1 else
+                f"Публикация запланирована на {first_dt.strftime('%d.%m.%Y %H:%M')}"
+            )
             QMessageBox.information(self, "Запланировано", msg)
 
     def _delete_video(self):

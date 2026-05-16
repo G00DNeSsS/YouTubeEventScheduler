@@ -75,6 +75,11 @@ def update_video(video_id: int, title, description, tags, thumbnail_path, privac
         )
 
 
+def update_video_title(video_id: int, title: str):
+    with get_connection() as conn:
+        conn.execute("UPDATE videos SET title = ? WHERE id = ?", (title, video_id))
+
+
 def delete_video(video_id: int):
     with get_connection() as conn:
         conn.execute("DELETE FROM videos WHERE id = ?", (video_id,))
