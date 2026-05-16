@@ -66,6 +66,11 @@ def _is_short(width: int, height: int, duration: float) -> bool:
     return bool(width and height and height > width and duration <= 60)
 
 
+def _title_sort_key(title: str) -> str:
+    # Python sorts ё (U+0451) after я (U+044F); replace it so ё falls next to е
+    return title.lower().replace("ё", "е\x01")
+
+
 # ---------------------------------------------------------------------------
 # SchedulePickerDialog — video selector + scheduling config in one place
 # ---------------------------------------------------------------------------
@@ -260,13 +265,13 @@ class SchedulePickerDialog(QDialog):
         if idx == 1:    # старые
             videos.reverse()
         elif idx == 2:  # A→Z
-            videos.sort(key=lambda v: v["title"].lower())
+            videos.sort(key=lambda v: _title_sort_key(v["title"]))
         elif idx == 3:  # Z→A
-            videos.sort(key=lambda v: v["title"].lower(), reverse=True)
+            videos.sort(key=lambda v: _title_sort_key(v["title"]), reverse=True)
         elif idx == 4:  # Shorts сначала
-            videos.sort(key=lambda v: (v["video_type"] != "short", v["title"].lower()))
+            videos.sort(key=lambda v: (v["video_type"] != "short", _title_sort_key(v["title"])))
         elif idx == 5:  # Видео сначала
-            videos.sort(key=lambda v: (v["video_type"] == "short", v["title"].lower()))
+            videos.sort(key=lambda v: (v["video_type"] == "short", _title_sort_key(v["title"])))
         return videos
 
     def _load_videos(self):
@@ -1052,13 +1057,13 @@ class VideoLibraryWidget(QWidget):
         if idx == 1:    # старые
             videos = list(reversed(videos))
         elif idx == 2:  # A→Z
-            videos.sort(key=lambda v: v["title"].lower())
+            videos.sort(key=lambda v: _title_sort_key(v["title"]))
         elif idx == 3:  # Z→A
-            videos.sort(key=lambda v: v["title"].lower(), reverse=True)
+            videos.sort(key=lambda v: _title_sort_key(v["title"]), reverse=True)
         elif idx == 4:  # Shorts сначала
-            videos.sort(key=lambda v: (v["video_type"] != "short", v["title"].lower()))
+            videos.sort(key=lambda v: (v["video_type"] != "short", _title_sort_key(v["title"])))
         elif idx == 5:  # Видео сначала
-            videos.sort(key=lambda v: (v["video_type"] == "short", v["title"].lower()))
+            videos.sort(key=lambda v: (v["video_type"] == "short", _title_sort_key(v["title"])))
 
         self.list_widget.clear()
         for v in videos:
