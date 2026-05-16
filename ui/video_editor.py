@@ -180,12 +180,25 @@ class VideoEditorDialog(QDialog):
             self._apply_file(file_path)
 
     def _build_ui(self):
-        layout = QVBoxLayout(self)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        outer.addWidget(scroll, 1)
+
+        container = QWidget()
+        scroll.setWidget(container)
+        layout = QVBoxLayout(container)
+        layout.setContentsMargins(20, 16, 20, 8)
         layout.setSpacing(10)
 
         file_row = QHBoxLayout()
         self.file_label = QLabel("Файл не выбран")
         self.file_label.setStyleSheet("color: #505050;")
+        self.file_label.setWordWrap(True)
         file_row.addWidget(self.file_label, 1)
         pick_btn = QPushButton("Выбрать видео")
         pick_btn.clicked.connect(self._pick_file)
@@ -200,10 +213,21 @@ class VideoEditorDialog(QDialog):
         type_row.addStretch()
         layout.addLayout(type_row)
 
-        layout.addWidget(QLabel("Заголовок:"))
+        title_hdr = QHBoxLayout()
+        title_lbl = QLabel("Заголовок")
+        title_lbl.setStyleSheet("font-weight: 600;")
+        title_hdr.addWidget(title_lbl)
+        title_hdr.addStretch()
+        self.title_counter = QLabel("0 / 100")
+        self.title_counter.setStyleSheet("color: #383838; font-size: 11px;")
+        title_hdr.addWidget(self.title_counter)
+        layout.addLayout(title_hdr)
+
         self.title_edit = QLineEdit()
         self.title_edit.setMaxLength(100)
-        self.title_edit.setPlaceholderText("Максимум 100 символов")
+        self.title_edit.setPlaceholderText("Название видео...")
+        self.title_edit.setMinimumHeight(36)
+        self.title_edit.textChanged.connect(self._on_title_changed)
         layout.addWidget(self.title_edit)
 
         layout.addWidget(QLabel("Описание:"))
@@ -255,13 +279,37 @@ class VideoEditorDialog(QDialog):
 
         thumb_row.addLayout(thumb_btns)
         layout.addLayout(thumb_row)
+        layout.addStretch()
+
+        # Buttons live outside the scroll area so they're always visible
+        btn_sep = QFrame()
+        btn_sep.setFrameShape(QFrame.Shape.HLine)
+        btn_sep.setStyleSheet("background: #1e1e1e; border: none; max-height: 1px;")
+        outer.addWidget(btn_sep)
+
+        btn_wrapper = QWidget()
+        btn_wrapper.setStyleSheet("background: #141414;")
+        btn_layout = QHBoxLayout(btn_wrapper)
+        btn_layout.setContentsMargins(20, 10, 20, 14)
 
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel
         )
         buttons.accepted.connect(self._save)
         buttons.rejected.connect(self.reject)
-        layout.addWidget(buttons)
+        btn_layout.addWidget(buttons)
+        outer.addWidget(btn_wrapper)
+
+    def _on_title_changed(self, text: str):
+        n = len(text)
+        self.title_counter.setText(f"{n} / 100")
+        if n >= 90:
+            color = "#ef5350"
+        elif n >= 70:
+            color = "#f59e0b"
+        else:
+            color = "#383838"
+        self.title_counter.setStyleSheet(f"color: {color}; font-size: 11px;")
 
     def _apply_file(self, path: str):
         self._video_path = path
