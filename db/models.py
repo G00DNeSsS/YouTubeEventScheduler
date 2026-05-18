@@ -4,6 +4,7 @@ CREATE TABLE IF NOT EXISTS accounts (
     account_name TEXT NOT NULL,
     channel_id TEXT,
     credentials_json TEXT NOT NULL,
+    long_uploads_status TEXT DEFAULT 'unknown',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 

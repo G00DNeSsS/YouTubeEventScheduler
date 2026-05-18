@@ -52,16 +52,18 @@ def authorize_youtube() -> tuple[Credentials, str, str]:
     creds = flow.run_local_server(port=0)
 
     youtube = build("youtube", "v3", credentials=creds)
-    channel_resp = youtube.channels().list(part="snippet", mine=True).execute()
+    channel_resp = youtube.channels().list(part="snippet,status", mine=True).execute()
     items = channel_resp.get("items", [])
     if items:
         channel_name = items[0]["snippet"]["title"]
         channel_id = items[0]["id"]
+        long_uploads_status = items[0].get("status", {}).get("longUploadsStatus", "unknown")
     else:
         channel_name = "Unknown"
         channel_id = ""
+        long_uploads_status = "unknown"
 
-    return creds, channel_name, channel_id
+    return creds, channel_name, channel_id, long_uploads_status
 
 
 def get_youtube_service(credentials_json: str):

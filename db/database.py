@@ -16,6 +16,10 @@ def init_db():
     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
     with get_connection() as conn:
         conn.executescript(SCHEMA)
+        try:
+            conn.execute("ALTER TABLE accounts ADD COLUMN long_uploads_status TEXT DEFAULT 'unknown'")
+        except Exception:
+            pass
 
 
 # --- Accounts ---
@@ -25,11 +29,12 @@ def get_accounts():
         return conn.execute("SELECT * FROM accounts ORDER BY created_at").fetchall()
 
 
-def add_account(account_name: str, channel_id: str, credentials_json: str) -> int:
+def add_account(account_name: str, channel_id: str, credentials_json: str,
+                long_uploads_status: str = "unknown") -> int:
     with get_connection() as conn:
         cur = conn.execute(
-            "INSERT INTO accounts (account_name, channel_id, credentials_json) VALUES (?, ?, ?)",
-            (account_name, channel_id, credentials_json)
+            "INSERT INTO accounts (account_name, channel_id, credentials_json, long_uploads_status) VALUES (?, ?, ?, ?)",
+            (account_name, channel_id, credentials_json, long_uploads_status)
         )
         return cur.lastrowid
 

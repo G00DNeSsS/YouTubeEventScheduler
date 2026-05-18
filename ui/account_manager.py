@@ -4,9 +4,18 @@ from PyQt6.QtWidgets import (
     QListWidgetItem, QPushButton, QMessageBox
 )
 from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QColor
 
 import db.database as db
 from auth.youtube_auth import authorize_youtube, credentials_to_dict
+
+
+_VERIFY_LABELS = {
+    "allowed":    ("✓ Верифицирован",          "#4caf50"),
+    "eligible":   ("! Можно верифицировать",   "#ff9800"),
+    "disallowed": ("✗ Не верифицирован",        "#ef5350"),
+    "unknown":    ("? Статус неизвестен",       "#707070"),
+}
 
 
 class AccountManagerWidget(QWidget):
@@ -62,11 +71,14 @@ class AccountManagerWidget(QWidget):
     def refresh(self):
         self.accounts_list.clear()
         for acc in db.get_accounts():
-            text = f"{acc['account_name']}"
+            status_key = acc["long_uploads_status"] if acc["long_uploads_status"] else "unknown"
+            label, color = _VERIFY_LABELS.get(status_key, _VERIFY_LABELS["unknown"])
+            text = f"{acc['account_name']}   [{label}]"
             if acc["channel_id"]:
                 text += f"  (ID: {acc['channel_id']})"
             item = QListWidgetItem(text)
             item.setData(Qt.ItemDataRole.UserRole, acc["id"])
+            item.setForeground(QColor(color))
             self.accounts_list.addItem(item)
 
         if self.accounts_list.count() == 0:
@@ -76,13 +88,22 @@ class AccountManagerWidget(QWidget):
 
     def _connect_account(self):
         try:
-            creds, channel_name, channel_id = authorize_youtube()
+            creds, channel_name, channel_id, long_uploads_status = authorize_youtube()
             creds_json = json.dumps(credentials_to_dict(creds))
-            db.add_account(channel_name, channel_id, creds_json)
+            db.add_account(channel_name, channel_id, creds_json, long_uploads_status)
             self.refresh()
+
+            label, _ = _VERIFY_LABELS.get(long_uploads_status, _VERIFY_LABELS["unknown"])
+            hints = {
+                "allowed":    "Аккаунт верифицирован — длинные видео разрешены, лимит загрузок выше.",
+                "eligible":   "Аккаунт не верифицирован.\nДля снятия ограничений пройдите верификацию на youtube.com/verify.",
+                "disallowed": "Аккаунт не верифицирован и не может пройти верификацию сейчас.\nЛимит: ~6 видео/день, макс. 15 мин.",
+                "unknown":    "Не удалось определить статус верификации.",
+            }
+            hint = hints.get(long_uploads_status, hints["unknown"])
             QMessageBox.information(
                 self, "Аккаунт подключён",
-                f"Канал «{channel_name}» успешно подключён."
+                f"Канал «{channel_name}» успешно подключён.\n\nСтатус: {label}\n{hint}"
             )
         except FileNotFoundError as e:
             QMessageBox.critical(self, "Файл не найден", str(e))
